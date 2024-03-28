@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>猜电影</title>
+    <script src="//res.wx.qq.com/open/js/jweixin-1.2.0.js"></script>
+    <script src="https://cdn.bootcss.com/fetch/2.0.3/fetch.js"></script>
+    <style>
+        #loading{
+            position: fixed;
+            width: 100px;
+            height: 100px;
+            background: rgba(0, 0, 0, .7);
+            left: 50%;
+            margin-left: -50px;
+            top: 50%;
+            margin-top: -50px;
+            color: #fff;
+            line-height: 100px;
+            text-align: center;
+            border-radius: 5px;
+            display: none;
+        }
+        #click{
+            color: red;
+        }
+        #noData{
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <p id="click">点击标题，开始录音。<br/>再次点击停止录音，开始搜索。</p>
+    <div id="main">
+        <h2 id="title"></h2>
+        <p id="director"></p>
+        <p id="year"></p>
+        <p id="poster"></p>
+    </div>
+    <div id="noData">sorry，没有搜索到<span id="translateResult"></span>这部电影的信息...</div>
+    <p id="loading">正在搜索...</p>
+    <script>
+        wx.config({
+            debug: false, // 开启调试模式,调用的所有api的返回值会在客户端alert出来，若要查看传入的参数，可以在pc端打开，参数信息会通过log打出，仅在pc端时才会打印。
+            appId: '<%= appId %>', // 必填，公众号的唯一标识
+            timestamp:'<%= timestamp %>', // 必填，生成签名的时间戳
+            nonceStr: '<%= noncestr %>', // 必填，生成签名的随机串
+            signature: '<%= signature %>',// 必填，签名
+            jsApiList: [
+                'startRecord',
+                'stopRecord',
+                'onVoiceRecordEnd',
+                'translateVoice',
+                'previewImage'
+            ] // 必填，需要使用的JS接口列表
+        });
+        wx.ready(function(){            
+            // config信息验证后会执行ready方法，所有接口调用都必须在config接口获得结果之后，config是一个客户端的异步操作，所以如果需要在页面加载时就调用相关接口，则须把相关接口放在ready函数中调用来确保正确执行。对于用户触发时才调用的接口，则可以直接调用，不需要放在ready函数中。
+            wx.checkJsApi({
+                jsApiList: ['startRecord','stopRecord','onVoiceRecordEnd','translateVoice'], // 需要检测的JS接口列表，所有JS接口列表见附录2,
+                success: function(res) {
+                    console.log(res);
+                }
+            });
+            var isReconding = false
+            var currentUrl = ''
+            var urlArr = []
+            // 预览海报
+            document.getElementById('poster').addEventListener('click',function(e){
+                wx.previewImage({
+                    current: currentUrl, // 当前显示图片的http链接
+                    urls: urlArr // 需要预览的图片http链接列表
+                });
+            },false)
+            // 点击录音 停止录音并搜索
+            document.getElementById('click').addEventListener('click',function(e){
+                if(!isReconding){
+                    isReconding = true
+                    wx.startRecord({
+                        cancel:function(){
+                            alert('那就不能搜索了')
+                        }
+                    })
+                    return
+                }
+                isReconding = false
+                wx.stopRecord({
+                    success:function(res){
+                        var localId = res.localId
+                        wx.translateVoice({
+                            localId: localId, // 需要识别的音频的本地Id，由录音相关接口获得
+                            isShowProgressTips: 1, // 默认为1，显示进度提示
+                            success: function (res) {
+                                console.log(res.translateResult); // 语音识别的结果
+                                // alert(res.translateResult); // 语音识别的结果
+                                // res.translateResult = '黑客帝国'
+                                document.getElementById('loading').style.display = 'block'
+                                fetch('/v2/movie/search?q=' + res.translateResult).then(function(r){
+                                    // return r.json()
+                                    return r.json()
+                                }).then(function(data){
+                                    console.log(data);
+                                    document.getElementById('loading').style.display = 'none'
+                                    if(!data.subjects.length){
+                                        document.getElementById('noData').style.display = 'block'
+                                        document.getElementById('translateResult').innerHTML = '《' + res.translateResult + '》'
+                                        document.getElementById('main').style.display = 'none'
+                                        return
+                                    }
+                                    var subject = data.subjects[0]
+                                    currentUrl = subject.images.large
+                                    data.subjects.forEach(subject => {
+                                        urlArr.push(subject.images.large)
+                                    })
+                                    document.getElementById('main').style.display = 'block'
+                                    document.getElementById('title').innerHTML = subject.title
+                                    document.getElementById('director').innerHTML = '导演：' + subject.directors[0].name
+                                    document.getElementById('year').innerHTML = subject.year + '年'
+                                    document.getElementById('poster').innerHTML = '<img src="'+ subject.images.large +'" />'
+                                })
+                            }
+                        })
+                    }
+                })
+            },false)
+        });
+    </script>
+</body>
+</html>
